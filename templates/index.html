@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hệ Thống Thông Gió</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f8f9fa;
+            font-family: 'Arial', sans-serif;
+        }
+        .container {
+            margin-top: 30px;
+        }
+        .card {
+            margin-bottom: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+        .card-header {
+            background-color: #007bff;
+            color: white;
+            font-weight: bold;
+            border-radius: 10px 10px 0 0;
+        }
+        .btn-custom {
+            margin: 5px;
+            width: 100px;
+        }
+        .table {
+            margin-top: 20px;
+        }
+        .table th, .table td {
+            text-align: center;
+        }
+        .status {
+            font-weight: bold;
+            color: #28a745;
+        }
+        .status.off {
+            color: #dc3545;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="text-center mb-4">Hệ Thống Thông Gió</h1>
+
+        <div class="card">
+            <div class="card-header">
+                Thông Tin Cảm Biến
+            </div>
+            <div class="card-body">
+                <h5 class="card-title">Nhiệt độ: <span id="temperature" class="status">0</span> °C</h5>
+                <h5 class="card-title">Độ ẩm: <span id="humidity" class="status">0</span> %</h5>
+                <h5 class="card-title">Trạng thái Relay: <span id="relay-state" class="status off">OFF</span></h5>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                Điều Khiển Relay
+            </div>
+            <div class="card-body">
+                <button id="relay-on" class="btn btn-success btn-custom">Bật Relay</button>
+                <button id="relay-off" class="btn btn-danger btn-custom">Tắt Relay</button>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                Chế Độ Tự Động
+            </div>
+            <div class="card-body">
+                <h5 class="card-title">Trạng thái chế độ: <span id="auto-mode-status" class="status off">Tắt</span></h5>
+                <button id="toggle-auto-mode" class="btn btn-primary btn-custom">Bật/Tắt</button>
+                <br><br>
+                <label>Ngưỡng nhiệt độ: <input type="number" id="temperature-threshold" class="form-control" value="30"> °C</label>
+                <br>
+                <label>Ngưỡng độ ẩm: <input type="number" id="humidity-threshold" class="form-control" value="70"> %</label>
+                <br>
+                <button id="set-thresholds" class="btn btn-warning btn-custom">Cài Đặt</button>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                10 Bản Ghi Gần Nhất
+            </div>
+            <div class="card-body">
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Nhiệt độ</th>
+                            <th>Độ ẩm</th>
+                            <th>Trạng thái relay</th>
+                            <th>Thời gian</th>
+                        </tr>
+                    </thead>
+                    <tbody id="records"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+    <script>
+        // Biến để theo dõi trạng thái nhập liệu
+        let isEditingTemperature = false;
+        let isEditingHumidity = false;
+
+        function updateData() {
+            $.get('/get_all_data', function(data) {
+                $('#temperature').text(data.latest_data.temperature);
+                $('#humidity').text(data.latest_data.humidity);
+                $('#relay-state').text(data.latest_data.relay ? 'ON' : 'OFF');
+                $('#relay-state').toggleClass('off', !data.latest_data.relay);
+                $('#auto-mode-status').text(data.auto_mode ? 'Bật' : 'Tắt');
+                $('#auto-mode-status').toggleClass('off', !data.auto_mode);
+
+                if (!isEditingTemperature && !isEditingHumidity) {
+                    $('#temperature-threshold').val(data.temperature_threshold);
+                    $('#humidity-threshold').val(data.humidity_threshold);
+                }
+
+                var recordsHtml = '';
+                data.records.forEach(function(record) {
+                    recordsHtml += `<tr>
+                        <td>${record[0]}</td>
+                        <td>${record[1]}</td>
+                        <td>${record[2]}</td>
+                        <td>${record[3] ? 'ON' : 'OFF'}</td>
+                        <td>${record[4]}</td>
+                    </tr>`;
+                });
+                $('#records').html(recordsHtml);
+            });
+        }
+
+        $(document).ready(function() {
+            // Bật/tắt relay
+            $('#relay-on').click(function() {
+                $.get('/set_relay?state=1', function(data) {
+                    updateData();
+                });
+            });
+
+            $('#relay-off').click(function() {
+                $.get('/set_relay?state=0', function(data) {
+                    updateData();
+                });
+            });
+
+            // Bật/tắt chế độ tự động
+            $('#toggle-auto-mode').click(function() {
+                $.get('/toggle_auto_mode', function(data) {
+                    updateData();
+                });
+            });
+
+            // Cài đặt ngưỡng
+            $('#set-thresholds').click(function() {
+                var temperatureThreshold = $('#temperature-threshold').val();
+                var humidityThreshold = $('#humidity-threshold').val();
+                $.get('/set_thresholds', {
+                    temperature_threshold: temperatureThreshold,
+                    humidity_threshold: humidityThreshold
+                }, function(data) {
+                    updateData();
+                });
+            });
+
+            // Theo dõi trạng thái nhập liệu
+            $('#temperature-threshold').on('focus', function() {
+                isEditingTemperature = true;
+            }).on('blur', function() {
+                isEditingTemperature = false;
+            });
+
+            $('#humidity-threshold').on('focus', function() {
+                isEditingHumidity = true;
+            }).on('blur', function() {
+                isEditingHumidity = false;
+            });
+
+            // Cập nhật dữ liệu ban đầu và định kỳ
+            updateData();
+            setInterval(updateData, 1000);
+        });
+    </script>
+</body>
+</html>
