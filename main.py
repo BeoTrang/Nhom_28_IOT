@@ -3,11 +3,25 @@ import paho.mqtt.client as mqtt
 import json
 import sqlite3
 from datetime import datetime
+from threading import Thread
+import pyrebase
 
-MQTT_BROKER = "192.168.0.103"
+firebaseConfig = {
+    "apiKey": "AIzaSyACuevUCbfT-Kxzo6xWe3I-BCNCIO8r2Kw",
+    "authDomain": "trang-64053.firebaseapp.com",
+    "databaseURL": "https://trang-64053-default-rtdb.firebaseio.com",
+    "projectId": "trang-64053",
+    "storageBucket": "trang-64053.firebasestorage.app",
+    "messagingSenderId": "104965919201",
+    "appId": "1:104965919201:web:8655bd9609c63d2ebb42a0"
+}
+firebase = pyrebase.initialize_app(firebaseConfig)
+db_firebase = firebase.database()
+
+MQTT_BROKER = "nekotrang.duckdns.org"
 MQTT_PORT = 1883
-MQTT_SENSOR_TOPIC = "sensor/data"
-MQTT_RELAY_TOPIC = "relay/control"
+MQTT_SENSOR_TOPIC = "nhom28/data"
+MQTT_RELAY_TOPIC = "nhom28/relay"
 
 app = Flask(__name__)
 
@@ -15,6 +29,8 @@ latest_data = {"temperature": 0, "humidity": 0, "relay": 0}
 auto_mode = False
 temperature_threshold = 30
 humidity_threshold = 70
+
+last_firebase_data = None
 
 def init_db():
     conn = sqlite3.connect('sensor_data.db')
@@ -25,6 +41,7 @@ def init_db():
                   humidity REAL,
                   relay INTEGER,
                   timestamp DATETIME)''')
+    c.execute("CREATE INDEX IF NOT EXISTS idx_timestamp ON sensor_data(timestamp)")
     conn.commit()
     conn.close()
 
@@ -37,100 +54,145 @@ def save_to_db(temperature, humidity, relay):
     conn.commit()
     conn.close()
 
+def push_to_firebase(temperature, humidity, relay):
+    global last_firebase_data
+    temp_margin = 0.5
+    humi_margin = 2.0
+    if last_firebase_data is not None:
+        if (abs(temperature - last_firebase_data["temperature"]) < temp_margin and
+            abs(humidity - last_firebase_data["humidity"]) < humi_margin and
+            relay == last_firebase_data["relay"]):
+            print("Dữ liệu không thay đổi nên không cần gửi lên Firebase")
+            return
+
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    data_firebase = {
+        "temperature": temperature,
+        "humidity": humidity,
+        "relay": relay,
+        "timestamp": timestamp
+    }
+    db_firebase.child("sensor_data").push(data_firebase)
+    last_firebase_data = {"temperature": temperature, "humidity": humidity, "relay": relay}
+    print("Dữ liệu được gửi lên Firebase:", data_firebase)
+
 def get_latest_records():
     conn = sqlite3.connect('sensor_data.db')
     c = conn.cursor()
-    c.execute("SELECT * FROM sensor_data ORDER BY timestamp DESC LIMIT 10")
+    c.execute("""
+        SELECT * FROM (
+            SELECT * FROM sensor_data 
+            ORDER BY timestamp DESC 
+            LIMIT 100
+        ) ORDER BY timestamp ASC
+    """)
+    records = c.fetchall()
+    conn.close()
+    return records
+
+def get_history_data(start, end):
+    conn = sqlite3.connect('sensor_data.db')
+    c = conn.cursor()
+    c.execute("""
+        SELECT * FROM sensor_data 
+        WHERE timestamp BETWEEN ? AND ?
+        ORDER BY timestamp ASC
+    """, (start, end))
     records = c.fetchall()
     conn.close()
     return records
 
 def on_connect(client, userdata, flags, rc):
-    print(f"Đã kết nối MQTT, Mã kết nối: {rc}")
+    print(f"Connected to MQTT Broker with code {rc}")
     client.subscribe(MQTT_SENSOR_TOPIC)
     client.subscribe(MQTT_RELAY_TOPIC)
 
-# Hàm xử lý khi nhận được MQTT
-def on_message(client, userdata, message):
+def on_message(client, userdata, msg):
     global latest_data, auto_mode, temperature_threshold, humidity_threshold
-    payload = message.payload.decode()
-    print(f"Nhận MQTT từ {message.topic}: {payload}")
     try:
-        data = json.loads(payload)
-        if message.topic == MQTT_SENSOR_TOPIC:
-            latest_data["temperature"] = data["temperature"]
-            latest_data["humidity"] = data["humidity"]
-            latest_data["relay"] = data.get("relay", latest_data["relay"])
-
+        data = json.loads(msg.payload.decode())
+        if msg.topic == MQTT_SENSOR_TOPIC:
+            new_relay = latest_data["relay"]
             if auto_mode:
-                if latest_data["temperature"] >= temperature_threshold or latest_data["humidity"] >= humidity_threshold:
-                    mqtt_client.publish(MQTT_RELAY_TOPIC, json.dumps({"relay": 1}))
-                    latest_data["relay"] = 1
-                else:
-                    mqtt_client.publish(MQTT_RELAY_TOPIC, json.dumps({"relay": 0}))
-                    latest_data["relay"] = 0
-
+                new_relay = 1 if (data["temperature"] >= temperature_threshold or
+                                  data["humidity"] >= humidity_threshold) else 0
+                if new_relay != latest_data["relay"]:
+                    client.publish(MQTT_RELAY_TOPIC, json.dumps({"relay": new_relay}))
+            latest_data.update({
+                "temperature": data["temperature"],
+                "humidity": data["humidity"],
+                "relay": new_relay
+            })
             save_to_db(data["temperature"], data["humidity"], latest_data["relay"])
-        elif message.topic == MQTT_RELAY_TOPIC:
-            latest_data["relay"] = data["relay"]
-    except json.JSONDecodeError as e:
-        print(f"Lỗi JSON: {e}")
+            push_to_firebase(data["temperature"], data["humidity"], latest_data["relay"])
+        elif msg.topic == MQTT_RELAY_TOPIC:
+            latest_data["relay"] = data.get("relay", 0)
+    except Exception as e:
+        print(f"Error processing message: {str(e)}")
 
 @app.route('/')
 def index():
-    records = get_latest_records()
-    return render_template('index.html', latest_data=latest_data, records=records, auto_mode=auto_mode,
-                           temperature_threshold=temperature_threshold, humidity_threshold=humidity_threshold)
+    return render_template('index.html')
 
 @app.route('/get_all_data')
 def get_all_data():
-    latest_records = get_latest_records()
+    records = get_latest_records()
     return jsonify({
         "latest_data": latest_data,
-        "records": latest_records,
+        "records": [{
+            "time": record[4][11:16],
+            "temperature": record[1],
+            "humidity": record[2],
+            "relay": record[3]
+        } for record in records],
         "auto_mode": auto_mode,
-        "temperature_threshold": temperature_threshold,
-        "humidity_threshold": humidity_threshold
+        "thresholds": {
+            "temperature": temperature_threshold,
+            "humidity": humidity_threshold
+        }
     })
 
-@app.route('/set_relay')
-def set_relay():
-    state = request.args.get('state')
-    if state not in ['0', '1']:
-        return jsonify({"status": "error", "message": "Invalid state"})
+@app.route('/control', methods=['POST'])
+def handle_control():
+    global auto_mode, temperature_threshold, humidity_threshold
+    data = request.json
+    action = data.get('action')
+    if action == 'set_relay':
+        state = data.get('state')
+        if state in [0, 1]:
+            auto_mode = False
+            latest_data["relay"] = state
+            mqtt_client.publish(MQTT_RELAY_TOPIC, json.dumps({"relay": state}))
+            return jsonify(success=True, auto_mode=auto_mode)
+    elif action == 'toggle_auto':
+        auto_mode = not auto_mode
+        return jsonify(success=True, auto_mode=auto_mode)
+    elif action == 'set_thresholds':
+        temperature_threshold = float(data.get('temperature', temperature_threshold))
+        humidity_threshold = float(data.get('humidity', humidity_threshold))
+        return jsonify(success=True)
+    return jsonify(success=False)
 
-    relay_state = int(state)
-    latest_data["relay"] = relay_state
-    mqtt_client.publish(MQTT_RELAY_TOPIC, json.dumps({"relay": relay_state}))
-
-    return jsonify({"status": "success", "relay": relay_state})
-
-@app.route('/toggle_auto_mode')
-def toggle_auto_mode():
-    global auto_mode
-    auto_mode = not auto_mode
-    return jsonify({"status": "success", "auto_mode": auto_mode})
-
-@app.route('/set_thresholds')
-def set_thresholds():
-    global temperature_threshold, humidity_threshold
-    temperature_threshold = float(request.args.get('temperature_threshold', temperature_threshold))
-    humidity_threshold = float(request.args.get('humidity_threshold', humidity_threshold))
-    return jsonify({"status": "success", "temperature_threshold": temperature_threshold, "humidity_threshold": humidity_threshold})
-
-mqtt_client = mqtt.Client()
-mqtt_client.on_connect = on_connect
-mqtt_client.on_message = on_message
-mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)
-
-def start_mqtt():
-    mqtt_client.loop_forever()
-
-init_db()
+@app.route('/get_history_data')
+def handle_history():
+    try:
+        start = datetime.strptime(request.args.get('start'), "%Y-%m-%dT%H:%M").strftime("%Y-%m-%d %H:%M:%S")
+        end = datetime.strptime(request.args.get('end'), "%Y-%m-%dT%H:%M").strftime("%Y-%m-%d %H:%M:%S")
+        records = get_history_data(start, end)
+        return jsonify([{
+            "time": record[4][11:16],
+            "temperature": record[1],
+            "humidity": record[2],
+            "relay": record[3]
+        } for record in records])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
-    from threading import Thread
-
-    mqtt_thread = Thread(target=start_mqtt)
-    mqtt_thread.start()
-    app.run(host='0.0.0.0', port=5000)
+    init_db()
+    mqtt_client = mqtt.Client()
+    mqtt_client.on_connect = on_connect
+    mqtt_client.on_message = on_message
+    mqtt_client.connect(MQTT_BROKER, MQTT_PORT)
+    Thread(target=mqtt_client.loop_forever).start()
+    app.run(host='0.0.0.0', port=5000, debug=True, use_reloader=False)

@@ -1,195 +1,382 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="vi">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hệ Thống Thông Gió</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Smart Environment Control</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
-        body {
-            background-color: #f8f9fa;
-            font-family: 'Arial', sans-serif;
+        :root {
+            --primary-color: #2563eb;
+            --secondary-color: #4f46e5;
+            --success-color: #16a34a;
+            --danger-color: #dc2626;
+            --background: #f8fafc;
+            --card-bg: #ffffff;
         }
-        .container {
-            margin-top: 30px;
+        body {
+            background: var(--background);
+            color: #1e293b;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+        }
+        .dashboard {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+            padding: 1.5rem;
+            max-width: 1400px;
+            margin: 0 auto;
         }
         .card {
-            margin-bottom: 20px;
-            border-radius: 10px;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            background: var(--card-bg);
+            border: none;
+            border-radius: 1rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            transition: transform 0.2s;
         }
-        .card-header {
-            background-color: #007bff;
-            color: white;
-            font-weight: bold;
-            border-radius: 10px 10px 0 0;
+        .card:hover {
+            transform: translateY(-2px);
         }
-        .btn-custom {
-            margin: 5px;
-            width: 100px;
+        .sensor-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin: 0.5rem 0;
         }
-        .table {
-            margin-top: 20px;
+        .control-btn {
+            padding: 1rem 2rem;
+            font-size: 1.1rem;
+            border-radius: 0.75rem;
+            transition: all 0.2s;
         }
-        .table th, .table td {
-            text-align: center;
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 60px;
+            height: 34px;
         }
-        .status {
-            font-weight: bold;
-            color: #28a745;
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
         }
-        .status.off {
-            color: #dc3545;
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 34px;
+        }
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 26px;
+            width: 26px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        input:checked + .slider {
+            background-color: var(--success-color);
+        }
+        input:checked + .slider:before {
+            transform: translateX(26px);
+        }
+        .chart-container {
+            height: 300px;
+            position: relative;
+        }
+        .modal-chart {
+            height: 60vh;
+            min-height: 400px;
+        }
+        @media (max-width: 768px) {
+            .dashboard {
+                grid-template-columns: 1fr;
+            }
+            .sensor-value {
+                font-size: 2rem;
+            }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1 class="text-center mb-4">Hệ Thống Thông Gió</h1>
-
-        <div class="card">
-            <div class="card-header">
-                Thông Tin Cảm Biến
+    <div class="dashboard">
+        <div class="card p-3">
+            <h4 class="text-secondary mb-3"><i class="fas fa-temperature-high me-2"></i>DỮ LIỆU CẢM BIẾN HIỆN TẠI</h4>
+            <div class="row g-3">
+                <div class="col-12 col-md-6">
+                    <div class="card p-3 bg-primary text-white">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <h6 class="text-uppercase small">NHIỆT ĐỘ</h6>
+                                <div class="sensor-value" id="temperature">0.0°C</div>
+                            </div>
+                            <i class="fas fa-thermometer-half fa-3x"></i>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-12 col-md-6">
+                    <div class="card p-3 bg-info text-white">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <h6 class="text-uppercase small">ĐỘ ẨM</h6>
+                                <div class="sensor-value" id="humidity">0.0%</div>
+                            </div>
+                            <i class="fas fa-tint fa-3x"></i>
+                        </div>
+                    </div>
+                </div>
             </div>
-            <div class="card-body">
-                <h5 class="card-title">Nhiệt độ: <span id="temperature" class="status">0</span> °C</h5>
-                <h5 class="card-title">Độ ẩm: <span id="humidity" class="status">0</span> %</h5>
-                <h5 class="card-title">Trạng thái Relay: <span id="relay-state" class="status off">OFF</span></h5>
-            </div>
-        </div>
-
-        <div class="card">
-            <div class="card-header">
-                Điều Khiển Relay
-            </div>
-            <div class="card-body">
-                <button id="relay-on" class="btn btn-success btn-custom">Bật Relay</button>
-                <button id="relay-off" class="btn btn-danger btn-custom">Tắt Relay</button>
-            </div>
-        </div>
-
-        <div class="card">
-            <div class="card-header">
-                Chế Độ Tự Động
-            </div>
-            <div class="card-body">
-                <h5 class="card-title">Trạng thái chế độ: <span id="auto-mode-status" class="status off">Tắt</span></h5>
-                <button id="toggle-auto-mode" class="btn btn-primary btn-custom">Bật/Tắt</button>
-                <br><br>
-                <label>Ngưỡng nhiệt độ: <input type="number" id="temperature-threshold" class="form-control" value="30"> °C</label>
-                <br>
-                <label>Ngưỡng độ ẩm: <input type="number" id="humidity-threshold" class="form-control" value="70"> %</label>
-                <br>
-                <button id="set-thresholds" class="btn btn-warning btn-custom">Cài Đặt</button>
+            <div class="card mt-3 p-3">
+                <h6 class="text-secondary mb-3"><i class="fas fa-chart-line me-2"></i>BIỂU ĐỒ THỜI GIAN THỰC</h6>
+                <div class="chart-container">
+                    <canvas id="realtimeChart"></canvas>
+                </div>
             </div>
         </div>
-
-        <div class="card">
-            <div class="card-header">
-                10 Bản Ghi Gần Nhất
+        <div class="card p-3">
+            <h4 class="text-secondary mb-3"><i class="fas fa-sliders-h me-2"></i>ĐIỀU KHIỂN</h4>
+            <div class="card p-3 mb-3 bg-light">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="text-secondary">TRẠNG THÁI QUẠT</h6>
+                        <span class="badge fs-6 bg-danger" id="relayState">TẮT</span>
+                    </div>
+                    <div class="btn-group">
+                        <button class="btn btn-success control-btn" onclick="control('relay_on')">
+                            <i class="fas fa-power-off me-2"></i>BẬT
+                        </button>
+                        <button class="btn btn-danger control-btn" onclick="control('relay_off')">
+                            <i class="fas fa-stop me-2"></i>TẮT
+                        </button>
+                    </div>
+                </div>
             </div>
-            <div class="card-body">
-                <table class="table table-striped">
-                    <thead>
-                        <tr>
-                            <th>ID</th>
-                            <th>Nhiệt độ</th>
-                            <th>Độ ẩm</th>
-                            <th>Trạng thái relay</th>
-                            <th>Thời gian</th>
-                        </tr>
-                    </thead>
-                    <tbody id="records"></tbody>
-                </table>
+            <div class="card p-3 mb-3">
+                <h6 class="text-secondary mb-3"><i class="fas fa-cog me-2"></i>CÀI ĐẶT CHẾ ĐỘ TỰ ĐỘNG</h6>
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <span>CHẾ ĐỘ TỰ ĐỘNG</span>
+                    <label class="switch">
+                        <input type="checkbox" id="autoModeToggle" onclick="control('toggle_auto')">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="row g-3">
+                    <div class="col-12 col-md-6">
+                        <label class="form-label">NGƯỠNG NHIỆT ĐỘ (°C)</label>
+                        <div class="input-group">
+                            <input type="number" id="tempThreshold" class="form-control" step="0.1" value="30">
+                            <span class="input-group-text">°C</span>
+                        </div>
+                    </div>
+                    <div class="col-12 col-md-6">
+                        <label class="form-label">NGƯỠNG ĐỘ ẨM (%)</label>
+                        <div class="input-group">
+                            <input type="number" id="humiThreshold" class="form-control" step="1" value="70">
+                            <span class="input-group-text">%</span>
+                        </div>
+                    </div>
+                </div>
+                <button class="btn btn-primary w-100 mt-3" onclick="control('update_thresholds')">
+                    <i class="fas fa-save me-2"></i>CẬP NHẬT
+                </button>
+            </div>
+            <button class="btn btn-outline-secondary w-100" data-bs-toggle="modal" data-bs-target="#historyModal">
+                <i class="fas fa-history me-2"></i>XEM LỊCH SỬ
+            </button>
+        </div>
+    </div>
+    <div class="modal fade" id="historyModal" tabindex="-1">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="fas fa-chart-area me-2"></i>DỮ LIỆU LỊCH SỬ</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3 mb-4">
+                        <div class="col-12 col-md-5">
+                            <input type="datetime-local" id="startTime" class="form-control">
+                        </div>
+                        <div class="col-12 col-md-5">
+                            <input type="datetime-local" id="endTime" class="form-control">
+                        </div>
+                        <div class="col-12 col-md-2">
+                            <button class="btn btn-primary w-100" onclick="loadHistory()">
+                                <i class="fas fa-filter me-2"></i>LỌC
+                            </button>
+                        </div>
+                    </div>
+                    <div class="modal-chart">
+                        <canvas id="historyChart"></canvas>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
-
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-
     <script>
-        // Biến để theo dõi trạng thái nhập liệu
-        let isEditingTemperature = false;
-        let isEditingHumidity = false;
-
-        function updateData() {
-            $.get('/get_all_data', function(data) {
-                $('#temperature').text(data.latest_data.temperature);
-                $('#humidity').text(data.latest_data.humidity);
-                $('#relay-state').text(data.latest_data.relay ? 'ON' : 'OFF');
-                $('#relay-state').toggleClass('off', !data.latest_data.relay);
-                $('#auto-mode-status').text(data.auto_mode ? 'Bật' : 'Tắt');
-                $('#auto-mode-status').toggleClass('off', !data.auto_mode);
-
-                if (!isEditingTemperature && !isEditingHumidity) {
-                    $('#temperature-threshold').val(data.temperature_threshold);
-                    $('#humidity-threshold').val(data.humidity_threshold);
+        let realtimeChart, historyChart;
+        let isEditingTemp = false;
+        let isEditingHumi = false;
+        function initRealtimeChart() {
+            const ctx = document.getElementById('realtimeChart').getContext('2d');
+            realtimeChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Nhiệt độ (°C)',
+                        data: [],
+                        borderColor: '#dc3545',
+                        tension: 0.1
+                    }, {
+                        label: 'Độ ẩm (%)',
+                        data: [],
+                        borderColor: '#0d6efd',
+                        tension: 0.1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            grid: { color: 'rgba(0,0,0,0.05)' }
+                        }
+                    }
                 }
-
-                var recordsHtml = '';
-                data.records.forEach(function(record) {
-                    recordsHtml += `<tr>
-                        <td>${record[0]}</td>
-                        <td>${record[1]}</td>
-                        <td>${record[2]}</td>
-                        <td>${record[3] ? 'ON' : 'OFF'}</td>
-                        <td>${record[4]}</td>
-                    </tr>`;
-                });
-                $('#records').html(recordsHtml);
             });
         }
-
-        $(document).ready(function() {
-            // Bật/tắt relay
-            $('#relay-on').click(function() {
-                $.get('/set_relay?state=1', function(data) {
-                    updateData();
+        function updateData() {
+            fetch('/get_all_data')
+                .then(res => res.json())
+                .then(data => {
+                    document.getElementById('temperature').textContent =
+                        `${data.latest_data.temperature.toFixed(1)}°C`;
+                    document.getElementById('humidity').textContent =
+                        `${data.latest_data.humidity.toFixed(1)}%`;
+                    const relayState = document.getElementById('relayState');
+                    relayState.textContent = data.latest_data.relay ? 'ON' : 'OFF';
+                    relayState.className = `badge fs-6 bg-${data.latest_data.relay ? 'success' : 'danger'}`;
+                    document.getElementById('autoModeToggle').checked = data.auto_mode;
+                    if (!isEditingTemp) {
+                        document.getElementById('tempThreshold').value = data.thresholds.temperature;
+                    }
+                    if (!isEditingHumi) {
+                        document.getElementById('humiThreshold').value = data.thresholds.humidity;
+                    }
+                    realtimeChart.data.labels = data.records.map(r => r.time);
+                    realtimeChart.data.datasets[0].data = data.records.map(r => r.temperature);
+                    realtimeChart.data.datasets[1].data = data.records.map(r => r.humidity);
+                    realtimeChart.update();
                 });
-            });
-
-            $('#relay-off').click(function() {
-                $.get('/set_relay?state=0', function(data) {
-                    updateData();
+        }
+        function control(action) {
+            let payload = { action };
+            if(action === 'relay_on') {
+                payload = { action: 'set_relay', state: 1 };
+            }
+            else if(action === 'relay_off') {
+                payload = { action: 'set_relay', state: 0 };
+            }
+            else if(action === 'update_thresholds') {
+                payload = {
+                    action: 'set_thresholds',
+                    temperature: parseFloat(document.getElementById('tempThreshold').value),
+                    humidity: parseFloat(document.getElementById('humiThreshold').value)
+                };
+            }
+            else if(action === 'toggle_auto') {
+                payload = { action: 'toggle_auto' };
+            }
+            fetch('/control', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            }).then(res => res.json())
+              .then(data => {
+                  if(data.auto_mode !== undefined) {
+                      document.getElementById('autoModeToggle').checked = data.auto_mode;
+                  }
+                  updateData();
+              });
+        }
+        function loadHistory() {
+            const start = document.getElementById('startTime').value;
+            const end = document.getElementById('endTime').value;
+            if(!start || !end) return alert('Please select time range!');
+            fetch(`/get_history_data?start=${start}&end=${end}`)
+                .then(res => res.json())
+                .then(data => {
+                    if(historyChart) historyChart.destroy();
+                    const ctx = document.getElementById('historyChart').getContext('2d');
+                    historyChart = new Chart(ctx, {
+                        type: 'line',
+                        data: {
+                            labels: data.map(d => d.time),
+                            datasets: [{
+                                label: 'Nhiệt độ (°C)',
+                                data: data.map(d => d.temperature),
+                                borderColor: '#dc3545',
+                                tension: 0.1
+                            }, {
+                                label: 'Độ ẩm (%)',
+                                data: data.map(d => d.humidity),
+                                borderColor: '#0d6efd',
+                                tension: 0.1
+                            }, {
+                                label: 'Trạng thái quạt',
+                                data: data.map(d => d.relay),
+                                borderColor: '#198754',
+                                yAxisID: 'y2',
+                                tension: 0.1
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            scales: {
+                                y: {
+                                    position: 'left',
+                                    grid: { color: 'rgba(0,0,0,0.05)' }
+                                },
+                                y2: {
+                                    position: 'right',
+                                    min: 0,
+                                    max: 1,
+                                    ticks: {
+                                        stepSize: 1,
+                                        callback: value => value ? 'ON' : 'OFF'
+                                    }
+                                }
+                            }
+                        }
+                    });
                 });
-            });
-
-            // Bật/tắt chế độ tự động
-            $('#toggle-auto-mode').click(function() {
-                $.get('/toggle_auto_mode', function(data) {
-                    updateData();
-                });
-            });
-
-            // Cài đặt ngưỡng
-            $('#set-thresholds').click(function() {
-                var temperatureThreshold = $('#temperature-threshold').val();
-                var humidityThreshold = $('#humidity-threshold').val();
-                $.get('/set_thresholds', {
-                    temperature_threshold: temperatureThreshold,
-                    humidity_threshold: humidityThreshold
-                }, function(data) {
-                    updateData();
-                });
-            });
-
-            // Theo dõi trạng thái nhập liệu
-            $('#temperature-threshold').on('focus', function() {
-                isEditingTemperature = true;
-            }).on('blur', function() {
-                isEditingTemperature = false;
-            });
-
-            $('#humidity-threshold').on('focus', function() {
-                isEditingHumidity = true;
-            }).on('blur', function() {
-                isEditingHumidity = false;
-            });
-
-            // Cập nhật dữ liệu ban đầu và định kỳ
+        }
+        document.addEventListener('DOMContentLoaded', () => {
+            initRealtimeChart();
+            setInterval(updateData, 2000);
             updateData();
-            setInterval(updateData, 1000);
+            const tempInput = document.getElementById('tempThreshold');
+            const humiInput = document.getElementById('humiThreshold');
+            tempInput.addEventListener('focus', () => isEditingTemp = true);
+            tempInput.addEventListener('blur', () => isEditingTemp = false);
+            tempInput.addEventListener('input', () => isEditingTemp = true);
+            humiInput.addEventListener('focus', () => isEditingHumi = true);
+            humiInput.addEventListener('blur', () => isEditingHumi = false);
+            humiInput.addEventListener('input', () => isEditingHumi = true);
         });
     </script>
 </body>

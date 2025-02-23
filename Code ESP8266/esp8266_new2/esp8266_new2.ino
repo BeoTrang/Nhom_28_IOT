@@ -1,32 +1,30 @@
-#include <WiFi.h>
+#include <ESP8266WiFi.h>
 #include <PubSubClient.h>
 #include <DHT.h>
 #include <ArduinoJson.h>
 
-// Cấu hình WiFi và MQTT
-const char* ssid = "IoT";
-const char* password = "234567Cn";
-const char* mqtt_server = "192.168.0.103";
+const char* ssid = "RiNo House";
+const char* password = "12345678@";
+const char* mqtt_server = "nekotrang.duckdns.org";
 const int mqtt_port = 1883;
 
-// Cấu hình DHT
-#define DHTPIN 21
+#define DHTPIN D4
 #define DHTTYPE DHT22
 DHT dht(DHTPIN, DHTTYPE);
-
-// Cấu hình chân relay
-#define RELAY_PIN 23
+#define RELAY_PIN D3
 
 WiFiClient espClient;
 PubSubClient client(espClient);
 
-// Các topic MQTT
-const char* sensorTopic = "sensor/data";
-const char* relayTopic = "relay/control";
+const char* topicData = "nhom28/data";
+const char* topicRelay = "nhom28/relay";
 
-// Biến kiểm tra thời gian gửi
 unsigned long lastPublishTime = 0;
-const long publishInterval = 5000;  // Khoảng thời gian giữa các lần gửi dữ liệu
+const long publishInterval = 5000;
+
+float lastTemperature = NAN;
+float lastHumidity = NAN;
+int lastRelayState = -1;
 
 void setup() {
   Serial.begin(115200);
@@ -35,10 +33,8 @@ void setup() {
   pinMode(RELAY_PIN, OUTPUT);
   digitalWrite(RELAY_PIN, LOW);
 
-  // Kết nối WiFi
   setup_wifi();
 
-  // Cấu hình MQTT
   client.setServer(mqtt_server, mqtt_port);
   client.setCallback(callback);
 }
@@ -49,30 +45,32 @@ void loop() {
   }
   client.loop();
 
-  // Chỉ gửi dữ liệu sau mỗi publishInterval ms
   unsigned long currentMillis = millis();
   if (currentMillis - lastPublishTime >= publishInterval) {
     lastPublishTime = currentMillis;
 
-    // Đọc dữ liệu từ cảm biến DHT22
     float temperature = dht.readTemperature();
     float humidity = dht.readHumidity();
+    int relayState = digitalRead(RELAY_PIN);
 
-    if (!isnan(temperature) && !isnan(humidity)) {
-      // Tạo chuỗi JSON với dữ liệu từ cảm biến và trạng thái relay
+    if ((!isnan(temperature) && temperature != lastTemperature) || 
+        (!isnan(humidity) && humidity != lastHumidity) || 
+        (relayState != lastRelayState)) {
+
+      lastTemperature = temperature;
+      lastHumidity = humidity;
+      lastRelayState = relayState;
+
       StaticJsonDocument<200> doc;
       doc["temperature"] = temperature;
       doc["humidity"] = humidity;
-      doc["relay"] = (digitalRead(RELAY_PIN) == HIGH) ? 1 : 0;
+      doc["relay"] = relayState;
 
       char buffer[512];
       serializeJson(doc, buffer);
 
-      // Gửi dữ liệu JSON qua MQTT
-      client.publish(sensorTopic, buffer);
-      Serial.println(buffer);
-    } else {
-      Serial.println("Lỗi đọc DHT22!");
+      client.publish(topicData, buffer);
+      Serial.println("Đã gửi dữ liệu: " + String(buffer));
     }
   }
 }
@@ -93,6 +91,8 @@ void callback(char* topic, byte* payload, unsigned int length) {
     message += (char)payload[i];
   }
 
+  Serial.println("Nhận MQTT từ " + String(topic) + ": " + message);
+
   StaticJsonDocument<200> doc;
   DeserializationError error = deserializeJson(doc, message);
 
@@ -101,20 +101,18 @@ void callback(char* topic, byte* payload, unsigned int length) {
     return;
   }
 
-  if (doc.containsKey("relay")) {
+  if (String(topic) == topicRelay && doc.containsKey("relay")) {
     int relayState = doc["relay"];
-    if (relayState == 1) {
-      digitalWrite(RELAY_PIN, HIGH);  // Bật relay
-    } else if (relayState == 0) {
-      digitalWrite(RELAY_PIN, LOW);   // Tắt relay
-    }
+    digitalWrite(RELAY_PIN, relayState ? HIGH : LOW);
+    Serial.println("Relay: " + String(relayState));
   }
 }
 
 void reconnect() {
   while (!client.connected()) {
-    if (client.connect("ESP32Client")) {
-      client.subscribe(relayTopic);  // Subscribe vào topic relay
+    if (client.connect("ESP8266Client")) {
+      client.subscribe(topicRelay);
+      Serial.println("Đã subscribe: " + String(topicRelay));
     } else {
       delay(5000);
     }
